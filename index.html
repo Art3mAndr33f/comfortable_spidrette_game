@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пасьянс Паучиха</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="header">
+            <h1>Пасьянс Паучиха</h1>
+            <div class="stats">
+                <span>Ходы: <span id="moves">0</span></span>
+                <span>Время: <span id="timer">0:00</span></span>
+                <label>
+                    Масти: 
+                    <select id="suitMode">
+                        <option value="1">1 масть (легко)</option>
+                        <option value="2">2 масти (средне)</option>
+                        <option value="4" selected>4 масти (сложно)</option>
+                    </select>
+                </label>
+                <button id="dealBtn">Раздать (D)</button>
+                <button id="newGame">Новая игра</button>
+                <button id="undo">Отменить (,)</button>
+                <button id="redo">Вернуть (.)</button>
+            </div>
+        </div>
+        <div class="game-info">
+            <span>Карт в колоде: <span id="deckCount">0</span></span>
+            <span>Собрано последовательностей: <span id="completed">0</span>/4</span>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div class="controls-hint">
+            <p><strong>Управление:</strong></p>
+            <p>🖱️ Мышь: одиночный клик — авто-перемещение одномастной последовательности, двойной клик — ручной выбор</p>
+            <p>⌨️ Клавиатура: ←→ колоды, ↑↓ карты, Пробел — выбор/перемещение, Enter — авто-перемещение, D — раздать, , и . — отмена/возврат</p>
+            <p>⚠️ Правила: Перемещаются только последовательности <strong>одной масти</strong>. На пустое место можно положить любую карту.</p>
+        </div>
+    </div>
+
+    <script src="js/card.js"></script>
+    <script src="js/pile.js"></script>
+    <script src="js/animation.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
