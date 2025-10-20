@@ -1,20 +1,92 @@
-class Game {
-    constructor(suitMode = 4, animationManager = null) {
-        this.suitMode = suitMode; // 1, 2, или 4 масти
+import { Card } from './card.js';
+import { Pile } from './pile.js';
+
+export class Game {
+    constructor(animationManager) {
+        this.animationManager = animationManager;
         this.piles = [];
         this.deck = [];
-        this.completedSequences = 0;
+        this.completedSequences = [];
+        this.suitCount = 2;
         this.moves = 0;
-        
-        // Двустековая система для undo/redo
+        this.startTime = null;
+        this.elapsedTime = 0;
+        this.timerInterval = null;
         this.past = [];
         this.future = [];
+        this.dealCount = 0; // Track number of deals
+    }
+
+    initGame() {
+        this.cleanup();
         
+        this.piles = [];
+        this.deck = [];
+        this.completedSequences = [];
+        this.moves = 0;
         this.startTime = Date.now();
-        this.timerInterval = null;
-        this.animationManager = animationManager;
+        this.elapsedTime = 0;
+        this.past = [];
+        this.future = [];
+        this.dealCount = 0;
+
+        // Create deck
+        const suits = this.suitCount === 1 ? [0] : 
+                     this.suitCount === 2 ? [0, 3] : 
+                     [0, 1, 2, 3];
         
-        this.initGame();
+        const allCards = [];
+        for (let rank = 1; rank <= 13; rank++) {
+            for (let suit of suits) {
+                allCards.push(new Card(rank, suit));
+            }
+        }
+
+        // Shuffle
+        for (let i = allCards.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [allCards[i], allCards[j]] = [allCards[j], allCards[i]];
+        }
+
+        // Create piles with initial layout
+        const canvas = document.getElementById('game-canvas');
+        const cardWidth = 100;
+        const spacing = 20;
+        const totalWidth = 7 * cardWidth + 6 * spacing;
+        const startX = (canvas.width - totalWidth) / 2;
+        const startY = 120;
+
+        for (let i = 0; i < 7; i++) {
+            const pile = new Pile(startX + i * (cardWidth + spacing), startY);
+            this.piles.push(pile);
+        }
+
+        // Deal initial cards: 1, 2, 3, 4, 5, 6, 7 cards per pile
+        let cardIndex = 0;
+        for (let pileIndex = 0; pileIndex < 7; pileIndex++) {
+            const numCards = pileIndex + 1;
+            for (let j = 0; j < numCards; j++) {
+                const card = allCards[cardIndex++];
+                // Only bottom card is face up
+                card.faceUp = (j === numCards - 1);
+                this.piles[pileIndex].addCard(card);
+            }
+        }
+
+        // Remaining cards go to deck
+        this.deck = allCards.slice(cardIndex);
+
+        this.startTimer();
+        this.updateStats();
+        this.updateDeckDisplay();
+        this.updateCompletedDisplay();
+    }
+
+    startTimer() {
+        this.timerInterval = setInterval(() => {
+            this.elapsedTime = Math.floor((Date.now() - this.startTime) / 1000);
+            this.updateStats();
+        }, 1000);
     }
 
     cleanup() {
@@ -24,187 +96,194 @@ class Game {
         }
     }
 
-    initGame() {
-        this.cleanup();
+    updateStats() {
+        document.getElementById('moves').textContent = this.moves;
+        
+        const minutes = Math.floor(this.elapsedTime / 60);
+        const seconds = this.elapsedTime % 60;
+        document.getElementById('time').textContent = 
+            `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-        // Создаем колоду в зависимости от сложности
-        this.deck = [];
-        let suitsToUse;
+        document.getElementById('undo').disabled = this.past.length === 0 || 
+            this.animationManager.hasActiveAnimations();
+        document.getElementById('redo').disabled = this.future.length === 0 || 
+            this.animationManager.hasActiveAnimations();
+        document.getElementById('deal').disabled = this.deck.length === 0 || 
+            this.animationManager.hasActiveAnimations();
+        document.getElementById('suits').disabled = 
+            this.animationManager.hasActiveAnimations();
+    }
+
+    updateDeckDisplay() {
+        const deckArea = document.getElementById('deck-area');
+        deckArea.innerHTML = '';
         
-        if (this.suitMode === 1) {
-            suitsToUse = [0]; // Только черви
-        } else if (this.suitMode === 2) {
-            suitsToUse = [0, 3]; // Черви (красная) и пики (черная) для контраста
-        } else {
-            suitsToUse = [0, 1, 2, 3]; // Все масти
+        // 4 piles: 7, 7, 7, 3 cards
+        const pilesSizes = [7, 7, 7, 3];
+        let remainingCards = this.deck.length;
+        
+        for (let i = 0; i < 4; i++) {
+            const pile = document.createElement('div');
+            pile.className = 'deck-pile';
+            
+            if (remainingCards > 0) {
+                remainingCards -= pilesSizes[i];
+            } else {
+                pile.classList.add('empty');
+            }
+            
+            deckArea.appendChild(pile);
         }
+    }
+
+    updateCompletedDisplay() {
+        const container = document.getElementById('completed-sequences');
+        container.innerHTML = '';
         
-        // Для каждой масти создаем нужное количество колод
-        const decksNeeded = Math.ceil(52 / (13 * suitsToUse.length));
-        
-        for (let d = 0; d < decksNeeded; d++) {
-            for (let suit of suitsToUse) {
-                for (let rank = 1; rank <= 13; rank++) {
-                    this.deck.push(new Card(rank, suit));
+        this.completedSequences.forEach((sequence, index) => {
+            const kingCard = sequence.find(card => card.rank === 13);
+            if (kingCard) {
+                const kingDiv = document.createElement('div');
+                kingDiv.className = 'completed-king';
+                kingDiv.style.color = kingCard.getSuitColor();
+                kingDiv.textContent = kingCard.getSuitSymbol();
+                
+                // Animate new kings
+                if (index === this.completedSequences.length - 1) {
+                    setTimeout(() => kingDiv.classList.add('animate-in'), 10);
+                } else {
+                    kingDiv.classList.add('animate-in');
                 }
+                
+                container.appendChild(kingDiv);
             }
-        }
-        
-        // Тасуем
-        this.shuffle(this.deck);
-
-        // Создаем 7 пилов
-        this.piles = [];
-        for (let i = 0; i < 7; i++) {
-            this.piles.push(new Pile(50 + i * 140, 80));
-        }
-
-        // Раздаем карты: 1, 2, 3, 4, 5, 6, 7 (всего 28 карт)
-        for (let i = 0; i < 7; i++) {
-            for (let j = 0; j <= i; j++) {
-                const card = this.deck.pop();
-                card.faceUp = (j === i);
-                this.piles[i].addCard(card);
-            }
-        }
-
-        this.moves = 0;
-        this.completedSequences = 0;
-        this.past = [];
-        this.future = [];
-        
-        this.startTimer();
-        this.updateStats();
-    }
-
-    shuffle(array) {
-        for (let i = array.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [array[i], array[j]] = [array[j], array[i]];
-        }
-    }
-
-    startTimer() {
-        this.startTime = Date.now();
-        
-        this.timerInterval = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-            const minutes = Math.floor(elapsed / 60);
-            const seconds = elapsed % 60;
-            document.getElementById('timer').textContent = 
-                `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        }, 1000);
+        });
     }
 
     dealCards() {
-        // Проверяем, что все места заполнены
-        for (let pile of this.piles) {
-            if (pile.cards.length === 0) {
-                alert('Заполните все пустые места перед раздачей!');
-                return false;
-            }
+        if (this.deck.length === 0 || this.animationManager.hasActiveAnimations()) {
+            return;
         }
 
-        if (this.deck.length < 7) {
-            alert('Недостаточно карт в колоде!');
-            return false;
-        }
+        // Save state
+        this.saveState('deal');
 
-        // Сохраняем состояние для отмены
-        const dealtCards = [];
-        for (let i = 0; i < 7; i++) {
-            dealtCards.push(this.deck.length - 7 + i);
-        }
-
-        this.past.push({
-            type: 'deal',
-            pileIndices: [0, 1, 2, 3, 4, 5, 6]
-        });
-        this.future = []; // Очищаем future при новом действии
-
-        // Раздаем по одной карте на каждый пил
-        for (let i = 0; i < 7; i++) {
+        // Deal cards with animation
+        const cardsToDeal = Math.min(this.deck.length, 7);
+        const cardsDealt = [];
+        
+        for (let i = 0; i < cardsToDeal; i++) {
             const card = this.deck.pop();
             card.faceUp = true;
-            this.piles[i].addCard(card);
+            
+            const targetPile = this.piles[i];
+            const targetY = targetPile.y + targetPile.cards.length * targetPile.getCardOffset();
+            
+            // Start position (deck area)
+            card.x = window.innerWidth - 150;
+            card.y = 50;
+            
+            cardsDealt.push({ card, pile: targetPile, targetY });
         }
 
+        // Animate dealing with stagger
+        cardsDealt.forEach((item, index) => {
+            setTimeout(() => {
+                this.animationManager.animateCardMove(
+                    item.card,
+                    item.pile.x,
+                    item.targetY,
+                    400,
+                    () => {
+                        item.pile.addCard(item.card);
+                        if (index === cardsDealt.length - 1) {
+                            this.checkForCompletedSequences();
+                            this.updateStats();
+                        }
+                    }
+                );
+            }, index * 80);
+        });
+
         this.moves++;
+        this.dealCount++;
+        this.updateDeckDisplay();
         this.updateStats();
-        return true;
     }
 
-    moveCards(fromPile, cardIndex, toPile, animate = false) {
-        const cards = fromPile.getMovableCardsFrom(cardIndex);
-        if (!cards || !toPile.canAcceptCards(cards)) {
+    moveCards(fromPileIndex, cardIndex, toPileIndex, withAnimation = true) {
+        if (this.animationManager.hasActiveAnimations()) return false;
+
+        const fromPile = this.piles[fromPileIndex];
+        const toPile = this.piles[toPileIndex];
+
+        const sequence = fromPile.getSameSuitSequenceFrom(cardIndex);
+        if (!sequence || sequence.length === 0) return false;
+
+        const topCard = sequence[0];
+        const targetCard = toPile.getTopCard();
+
+        if (targetCard && !topCard.canPlaceOn(targetCard)) {
             return false;
         }
 
-        // Сохраняем состояние для отмены
-        const prevFromTopCard = fromPile.cards[cardIndex - 1];
-        this.past.push({
-            type: 'move',
-            from: this.piles.indexOf(fromPile),
-            to: this.piles.indexOf(toPile),
-            cards: cards.length,
-            fromTopWasFaceDown: prevFromTopCard && !prevFromTopCard.faceUp
-        });
-        this.future = []; // Очищаем future при новом действии
+        // Valid move
+        this.saveState('move');
 
-        // Вычисляем целевые позиции
-        const targetY = toPile.y + toPile.cards.length * toPile.cardOffset;
+        const movedCards = fromPile.removeCardsFrom(cardIndex);
+        
+        // Flip next card in source pile
+        const newTopCard = fromPile.getTopCard();
+        if (newTopCard && !newTopCard.faceUp) {
+            newTopCard.faceUp = true;
+        }
 
-        if (animate && this.animationManager) {
-            // Анимируем перемещение
-            const cardsToMove = [...cards];
-            fromPile.removeCardsFrom(cardIndex);
-            
-            cardsToMove.forEach((card, index) => {
-                this.animationManager.animateCardMove(
-                    card,
-                    toPile.x,
-                    targetY + index * toPile.cardOffset,
-                    300,
-                    index === cardsToMove.length - 1 ? () => {
+        if (withAnimation) {
+            movedCards.forEach((card, i) => {
+                const targetY = toPile.y + (toPile.cards.length + i) * toPile.getCardOffset();
+                
+                this.animationManager.animateCardMove(card, toPile.x, targetY, 300, () => {
+                    if (i === movedCards.length - 1) {
+                        toPile.addCards(movedCards);
                         this.checkForCompletedSequences();
-                    } : null
-                );
+                        this.updateStats();
+                    }
+                });
             });
-            
-            toPile.addCards(cardsToMove);
         } else {
-            fromPile.removeCardsFrom(cardIndex);
-            toPile.addCards(cards);
+            toPile.addCards(movedCards);
             this.checkForCompletedSequences();
         }
 
         this.moves++;
         this.updateStats();
-        
         return true;
     }
 
-    findBestMoveForCards(pile, cardIndex) {
-        const cards = pile.getMovableCardsFrom(cardIndex);
-        if (!cards) return null;
+    findBestMoveForCards(pileIndex, cardIndex) {
+        const pile = this.piles[pileIndex];
+        const sequence = pile.getSameSuitSequenceFrom(cardIndex);
+        if (!sequence || sequence.length === 0) return null;
 
-        const firstCard = cards[0];
+        const topCard = sequence[0];
         
-        // Приоритет 1: карта с нужным рангом (например, 6 на 7)
-        for (let targetPile of this.piles) {
-            if (targetPile === pile) continue;
+        // Priority 1: Find card with rank + 1
+        for (let i = 0; i < this.piles.length; i++) {
+            if (i === pileIndex) continue;
             
-            const topCard = targetPile.getTopCard();
-            if (topCard && topCard.rank === firstCard.rank + 1) {
-                return targetPile;
+            const targetCard = this.piles[i].getTopCard();
+            if (targetCard && topCard.canPlaceOn(targetCard)) {
+                return i;
             }
         }
 
-        // Приоритет 2: пустое место (если нет подходящей карты)
-        for (let targetPile of this.piles) {
-            if (targetPile === pile) continue;
-            if (targetPile.cards.length === 0) {
-                return targetPile;
+        // Priority 2: Empty pile (only if not already from empty pile)
+        if (pile.cards.length > sequence.length) {
+            for (let i = 0; i < this.piles.length; i++) {
+                if (i === pileIndex) continue;
+                if (this.piles[i].cards.length === 0) {
+                    return i;
+                }
             }
         }
 
@@ -213,136 +292,90 @@ class Game {
 
     checkForCompletedSequences() {
         for (let pile of this.piles) {
-            const index = pile.checkForCompletedSequence();
-            if (index !== null) {
-                pile.removeCardsFrom(index);
-                this.completedSequences++;
+            const completed = pile.checkForCompletedSequence();
+            if (completed) {
+                pile.removeCardsFrom(pile.cards.length - 13);
+                this.completedSequences.push(completed);
                 
-                if (this.completedSequences === 4) {
+                // Flip next card
+                const newTop = pile.getTopCard();
+                if (newTop && !newTop.faceUp) {
+                    newTop.faceUp = true;
+                }
+                
+                this.updateCompletedDisplay();
+                
+                // Check win condition
+                if (this.completedSequences.length === 4) {
                     setTimeout(() => {
-                        this.cleanup();
-                        alert('Поздравляем! Пасьянс сошелся!');
+                        alert(`Поздравляем! Пасьянс сошёлся!\nХоды: ${this.moves}\nВремя: ${document.getElementById('time').textContent}`);
                     }, 500);
                 }
                 
-                this.updateStats();
+                return true;
             }
         }
+        return false;
+    }
+
+    saveState(action) {
+        const state = {
+            action,
+            piles: this.piles.map(p => p.clone()),
+            deck: this.deck.map(c => c.clone()),
+            completedSequences: this.completedSequences.length,
+            moves: this.moves,
+            dealCount: this.dealCount
+        };
+        this.past.push(state);
+        this.future = [];
     }
 
     undo() {
-        if (this.past.length === 0) return false;
+        if (this.past.length === 0 || this.animationManager.hasActiveAnimations()) return;
 
-        const action = this.past.pop();
-        this.future.unshift(action); // Добавляем в future для redo
+        const currentState = {
+            piles: this.piles.map(p => p.clone()),
+            deck: this.deck.map(c => c.clone()),
+            completedSequences: this.completedSequences.length,
+            moves: this.moves,
+            dealCount: this.dealCount
+        };
+        this.future.push(currentState);
 
-        if (action.type === 'move') {
-            const fromPile = this.piles[action.from];
-            const toPile = this.piles[action.to];
-
-            const cards = toPile.removeCardsFrom(toPile.cards.length - action.cards);
-            fromPile.addCards(cards);
-
-            if (action.fromTopWasFaceDown && fromPile.cards.length > cards.length) {
-                fromPile.cards[fromPile.cards.length - cards.length - 1].faceUp = false;
-            }
-
-            this.moves = Math.max(0, this.moves - 1);
-        } else if (action.type === 'deal') {
-            // Отменяем раздачу
-            for (let i = action.pileIndices.length - 1; i >= 0; i--) {
-                const pileIndex = action.pileIndices[i];
-                const pile = this.piles[pileIndex];
-                const card = pile.cards.pop();
-                card.faceUp = false;
-                this.deck.push(card);
-                pile.updateCardPositions();
-            }
-
-            this.moves = Math.max(0, this.moves - 1);
-        }
-
-        this.updateStats();
-        return true;
+        const prevState = this.past.pop();
+        this.restoreState(prevState);
     }
 
     redo() {
-        if (this.future.length === 0) return false;
+        if (this.future.length === 0 || this.animationManager.hasActiveAnimations()) return;
 
-        const action = this.future.shift();
-        this.past.push(action);
+        const currentState = {
+            piles: this.piles.map(p => p.clone()),
+            deck: this.deck.map(c => c.clone()),
+            completedSequences: this.completedSequences.length,
+            moves: this.moves,
+            dealCount: this.dealCount
+        };
+        this.past.push(currentState);
 
-        if (action.type === 'move') {
-            const fromPile = this.piles[action.from];
-            const toPile = this.piles[action.to];
-            const cardIndex = fromPile.cards.length - action.cards;
+        const nextState = this.future.pop();
+        this.restoreState(nextState);
+    }
 
-            const cards = fromPile.removeCardsFrom(cardIndex);
-            toPile.addCards(cards);
-
-            this.moves++;
-        } else if (action.type === 'deal') {
-            // Повторяем раздачу
-            for (let i = 0; i < action.pileIndices.length; i++) {
-                const pileIndex = action.pileIndices[i];
-                const pile = this.piles[pileIndex];
-                const card = this.deck.pop();
-                card.faceUp = true;
-                pile.addCard(card);
-            }
-
-            this.moves++;
+    restoreState(state) {
+        this.piles = state.piles.map(p => p.clone());
+        this.deck = state.deck.map(c => c.clone());
+        this.moves = state.moves;
+        this.dealCount = state.dealCount;
+        
+        // Restore completed sequences
+        while (this.completedSequences.length > state.completedSequences) {
+            this.completedSequences.pop();
         }
-
+        
         this.updateStats();
-        return true;
-    }
-
-    canUndo() {
-        return this.past.length > 0;
-    }
-
-    canRedo() {
-        return this.future.length > 0;
-    }
-
-    updateStats() {
-        document.getElementById('moves').textContent = this.moves;
-        document.getElementById('deckCount').textContent = this.deck.length;
-        document.getElementById('completed').textContent = this.completedSequences;
-        
-        // Обновляем состояние кнопок
-        const undoBtn = document.getElementById('undo');
-        const redoBtn = document.getElementById('redo');
-        const dealBtn = document.getElementById('dealBtn');
-        
-        if (undoBtn) undoBtn.disabled = !this.canUndo();
-        if (redoBtn) redoBtn.disabled = !this.canRedo();
-        if (dealBtn) dealBtn.disabled = this.deck.length < 7;
-    }
-
-    getPileAt(x, y) {
-        for (let pile of this.piles) {
-            if (x >= pile.x && x <= pile.x + 100) {
-                return pile;
-            }
-        }
-        return null;
-    }
-
-    getCardAt(x, y) {
-        for (let pile of this.piles) {
-            for (let i = pile.cards.length - 1; i >= 0; i--) {
-                const card = pile.cards[i];
-                if (card.faceUp) {
-                    const cardHeight = (i === pile.cards.length - 1) ? 140 : pile.cardOffset;
-                    if (x >= card.x && x <= card.x + 100 &&
-                        y >= card.y && y <= card.y + cardHeight) {
-                        return { pile, card, index: i };
-                    }
-                }
-            }
-        }
-        return null;
+        this.updateDeckDisplay();
+        this.updateCompletedDisplay();
     }
 }
