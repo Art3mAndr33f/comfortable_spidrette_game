@@ -1,9 +1,9 @@
-export class AnimationManager {
+class AnimationManager {
     constructor() {
         this.animations = [];
     }
 
-    animateCardMove(card, targetX, targetY, duration, callback) {
+    animateCardMove(card, targetX, targetY, duration = 300, callback = null) {
         const startX = card.x;
         const startY = card.y;
         const startTime = performance.now();
@@ -16,18 +16,21 @@ export class AnimationManager {
             targetY,
             startTime,
             duration,
-            callback
+            callback,
+            active: true
         };
 
         this.animations.push(animation);
     }
 
-    update(timestamp) {
+    update(currentTime) {
         this.animations = this.animations.filter(anim => {
-            const elapsed = timestamp - anim.startTime;
+            if (!anim.active) return false;
+
+            const elapsed = currentTime - anim.startTime;
             const progress = Math.min(elapsed / anim.duration, 1);
             
-            // Ease-out cubic
+            // Easing function (ease-out cubic)
             const eased = 1 - Math.pow(1 - progress, 3);
 
             anim.card.x = anim.startX + (anim.targetX - anim.startX) * eased;
@@ -36,11 +39,7 @@ export class AnimationManager {
             if (progress >= 1) {
                 anim.card.x = anim.targetX;
                 anim.card.y = anim.targetY;
-                
-                if (anim.callback) {
-                    anim.callback();
-                }
-                
+                if (anim.callback) anim.callback();
                 return false;
             }
 
@@ -50,5 +49,9 @@ export class AnimationManager {
 
     hasActiveAnimations() {
         return this.animations.length > 0;
+    }
+
+    clear() {
+        this.animations = [];
     }
 }

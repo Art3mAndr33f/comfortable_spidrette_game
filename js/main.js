@@ -1,74 +1,76 @@
-import { Game } from './game.js';
-import { Renderer } from './renderer.js';
-import { InputManager } from './input.js';
-import { AnimationManager } from './animation.js';
+let game, renderer, inputManager, animationManager;
 
-const canvas = document.getElementById('game-canvas');
-const ctx = canvas.getContext('2d');
+function init() {
+    const canvas = document.getElementById('gameCanvas');
+    const suitSelect = document.getElementById('suitMode');
+    
+    animationManager = new AnimationManager();
+    game = new Game(parseInt(suitSelect.value), animationManager);
+    renderer = new Renderer(canvas, game);
+    inputManager = new InputManager(canvas, game, renderer);
+    
+    // Начальная отрисовка
+    renderer.draw();
+    
+    // Смена режима мастей
+    suitSelect.addEventListener('change', () => {
+        if (confirm('Начать новую игру с выбранным режимом?')) {
+            startNewGame();
+        }
+    });
+    
+    // Кнопки управления
+    document.getElementById('newGame').addEventListener('click', () => {
+        startNewGame();
+    });
+    
+    document.getElementById('undo').addEventListener('click', () => {
+        game.undo();
+    });
 
-// Resize canvas
-function resizeCanvas() {
-    const topPanel = document.getElementById('top-panel');
-    const topPanelHeight = topPanel.offsetHeight;
-    
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight - topPanelHeight;
-    
-    if (renderer) {
+    document.getElementById('redo').addEventListener('click', () => {
+        game.redo();
+    });
+
+    document.getElementById('dealBtn').addEventListener('click', () => {
+        game.dealCards();
+    });
+
+    // Игровой цикл для плавной анимации
+    function gameLoop(timestamp) {
+        animationManager.update(timestamp);
         renderer.draw();
+        requestAnimationFrame(gameLoop);
     }
-}
-
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
-
-// Initialize game systems
-const animationManager = new AnimationManager();
-const game = new Game(animationManager);
-const renderer = new Renderer(ctx, canvas, game, animationManager);
-const inputManager = new InputManager(canvas, game, renderer, animationManager);
-
-// UI Controls
-document.getElementById('new-game').addEventListener('click', () => {
-    game.initGame();
-    renderer.clearKeyboardFocus();
-    renderer.draw();
-});
-
-document.getElementById('undo').addEventListener('click', () => {
-    game.undo();
-    renderer.draw();
-});
-
-document.getElementById('redo').addEventListener('click', () => {
-    game.redo();
-    renderer.draw();
-});
-
-document.getElementById('deal').addEventListener('click', () => {
-    game.dealCards();
-    renderer.draw();
-});
-
-document.getElementById('suits').addEventListener('change', (e) => {
-    game.suitCount = parseInt(e.target.value);
-    game.initGame();
-    renderer.clearKeyboardFocus();
-    renderer.draw();
-});
-
-document.getElementById('toggle-help').addEventListener('click', () => {
-    const content = document.getElementById('controls-content');
-    content.classList.toggle('collapsed');
-});
-
-// Game loop
-function gameLoop(timestamp) {
-    animationManager.update(timestamp);
-    renderer.draw();
     requestAnimationFrame(gameLoop);
 }
 
-// Start game
-game.initGame();
-requestAnimationFrame(gameLoop);
+function startNewGame() {
+    const suitSelect = document.getElementById('suitMode');
+    
+    if (game) {
+        game.cleanup();
+    }
+    
+    game = new Game(parseInt(suitSelect.value), animationManager);
+    renderer.game = game;
+    inputManager.game = game;
+    inputManager.selectedPile = null;
+    inputManager.selectedCardIndex = null;
+    inputManager.keyboardSelectedPile = null;
+    inputManager.keyboardSelectedCardIndex = null;
+    inputManager.currentPileIndex = 0;
+    inputManager.currentCardIndex = 0;
+    renderer.setSelection(null, null);
+    renderer.setKeyboardFocus(null, null);
+}
+
+// Запуск при загрузке страницы
+window.addEventListener('load', init);
+
+// Очистка при выгрузке
+window.addEventListener('beforeunload', () => {
+    if (game) {
+        game.cleanup();
+    }
+});

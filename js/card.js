@@ -1,33 +1,32 @@
-export class Card {
+class Card {
     constructor(rank, suit) {
-        this.rank = rank; // 1(Ace) to 13(King)
-        this.suit = suit; // 0:hearts, 1:diamonds, 2:clubs, 3:spades
+        this.rank = rank; // 1-13 (1=Туз, 13=Король)
+        this.suit = suit; // 0-3 (черви, бубны, трефы, пики)
         this.faceUp = false;
         this.x = 0;
         this.y = 0;
     }
 
     getRankName() {
-        const names = ['', 'Т', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'В', 'Д', 'К'];
-        return names[this.rank];
+        const ranks = ['', 'Т', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'В', 'Д', 'К'];
+        return ranks[this.rank];
     }
 
     getSuitSymbol() {
-        const symbols = ['♥', '♦', '♣', '♠'];
-        return symbols[this.suit];
+        const suits = ['♥', '♦', '♣', '♠'];
+        return suits[this.suit];
     }
 
     getSuitColor() {
-        return (this.suit === 0 || this.suit === 1) ? '#d32f2f' : '#212121';
+        return (this.suit === 0 || this.suit === 1) ? '#d32f2f' : '#000';
     }
 
     canPlaceOn(otherCard) {
-        if (!otherCard) return true; // Can place on empty
-        return this.rank === otherCard.rank - 1;
+        if (!otherCard) return true; // Любую карту можно положить на пустое место
+        return this.rank === otherCard.rank - 1; // Нисходящая последовательность
     }
 
     isSequenceWith(otherCard) {
-        if (!otherCard) return false;
         return this.suit === otherCard.suit && this.rank === otherCard.rank - 1;
     }
 
